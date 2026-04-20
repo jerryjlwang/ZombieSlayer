@@ -97,6 +97,16 @@ _RULES: tuple[Rule, ...] = (
         RiskCategory.INSTRUCTION_OVERRIDE, 0.75,
         "fake role/system tag in external content",
     ),
+    Rule(
+        "code_fence_role_tag",
+        re.compile(
+            r"(?:^|\n)\s*(?:```|~~~)[ \t]*"
+            r"(?:system|assistant|developer|instructions?|agent|tool|function)\b",
+            re.I | re.M,
+        ),
+        RiskCategory.INSTRUCTION_OVERRIDE, 0.75,
+        "code fence language tag impersonates agent role",
+    ),
 )
 
 
