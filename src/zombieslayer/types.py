@@ -93,6 +93,55 @@ class ReviewSummary:
                 counts[c] = counts.get(c, 0) + 1
         return counts
 
+    def render(self) -> str:
+        """Compact D-style review display (PRD §17)."""
+        if not self.records:
+            return "ZombieSlayer \u2014 nothing quarantined."
+
+        _TIMES = "\u00d7"
+        _CHECK = "\u2713"
+        _ACTION_LABEL: dict[ReviewAction | None, str] = {
+            None: "PENDING",
+            ReviewAction.EXCLUDE: "EXCLUDED",
+            ReviewAction.INCLUDE: "INCLUDED",
+            ReviewAction.REPROCESS_CLEAN: "CLEANED",
+        }
+
+        n = len(self.records)
+        lines: list[str] = []
+        lines.append(f"ZombieSlayer \u2014 {n} quarantined item{'s' if n > 1 else ''}")
+
+        cats = self.by_category()
+        if cats:
+            lines.append("  " + "  |  ".join(
+                f"{cat.value.upper()} {_TIMES}{count}"
+                for cat, count in sorted(cats.items(), key=lambda kv: -kv[1])
+            ))
+
+        lines.append("")
+
+        for i, rec in enumerate(self.records, 1):
+            label = _ACTION_LABEL[rec.action]
+            source = rec.result.item.source or "(unknown source)"
+            lines.append(f" {i}. [{label}] {source}  (score {rec.result.score:.2f})")
+
+            if rec.result.findings:
+                top = max(rec.result.findings, key=lambda f: f.score)
+                lines.append(f"    {top.rule}: {top.reason}")
+
+            cats_str = ", ".join(c.value.upper() for c in rec.result.categories)
+            if cats_str:
+                lines.append(f"    Categories: {cats_str}")
+
+            if rec.action is None:
+                lines.append("    Actions: exclude | include | reprocess-clean")
+            elif rec.action == ReviewAction.REPROCESS_CLEAN and rec.result.sanitized_text:
+                lines.append(f"    {_CHECK} Sanitized text available for rerun")
+
+            lines.append("")
+
+        return "\n".join(lines).rstrip()
+
 
 @dataclass
 class PersistenceDecision:
