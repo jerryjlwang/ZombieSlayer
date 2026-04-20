@@ -183,17 +183,17 @@ class Detector:
 
         # Instruction density: many imperative lines clustered into short text
         # is suspicious for content sourced from a web page or document chunk.
-        imperative = re.findall(
+        imp_hits = list(re.finditer(
             r"(?mi)^\s*(?:please\s+)?(?:do|do not|don't|ignore|follow|send|reveal|print|remember|forget|output|execute|run|call)\b",
             text,
-        )
+        ))
         words = max(len(text.split()), 1)
-        density = len(imperative) / words
-        if len(imperative) >= 3 and density > 0.08:
+        density = len(imp_hits) / words
+        if len(imp_hits) >= 3 and density > 0.08:
             out.append(Finding(
                 category=RiskCategory.STRUCTURAL_ANOMALY,
-                reason=f"high imperative-instruction density ({len(imperative)} hits, {density:.0%})",
-                span=(0, min(len(text), 200)),
+                reason=f"high imperative-instruction density ({len(imp_hits)} hits, {density:.0%})",
+                span=(imp_hits[0].start(), imp_hits[-1].end()),
                 rule="imperative_density",
                 score=min(0.4 + density, 0.85),
             ))
