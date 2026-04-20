@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import statistics
 from dataclasses import dataclass
 
 from zombieslayer.types import ContentItem, Finding, RiskCategory
@@ -103,6 +104,32 @@ _RULES: tuple[Rule, ...] = (
 _ZERO_WIDTH = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
 
 
+# Sentence-level register signals. Used by `_denoising` to score each sentence
+# against the document baseline; a localized cluster that diverges sharply is
+# our stdlib stand-in for reconstruction error (PRD §14.3).
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"'\(\[])")
+_IMPERATIVE_START = re.compile(
+    r"^\s*(?:please\s+|now\s+|first[, ]+)?"
+    r"(?:ignore|forget|disregard|override|bypass|"
+    r"send|email|post|upload|exfiltrate|leak|transmit|"
+    r"reveal|print|show|output|repeat|dump|"
+    r"remember|memorize|store|save|persist|"
+    r"execute|run|call|invoke|fetch|"
+    r"act|pretend|behave|respond|answer)\b",
+    re.I,
+)
+_SECOND_PERSON = re.compile(r"\byou(?:r|'re|'ve|'ll|rself)?\b", re.I)
+_MODAL_COMMAND = re.compile(
+    r"\byou (?:must|should|need to|have to|are (?:required|expected|instructed) to)\b",
+    re.I,
+)
+_OVERRIDE_REF = re.compile(
+    r"\b(?:previous|prior|above|earlier|system|developer|hidden|initial) "
+    r"(?:instructions?|prompt|rules?|directions?|message)\b",
+    re.I,
+)
+
+
 class Detector:
     """Rule-based detector augmented with structural anomaly signals.
 
@@ -127,6 +154,7 @@ class Detector:
                 ))
 
         findings.extend(self._structural(text))
+        findings.extend(self._denoising(text))
         return findings
 
     def _structural(self, text: str) -> list[Finding]:
@@ -161,3 +189,92 @@ class Detector:
             ))
 
         return out
+
+    def _denoising(self, text: str) -> list[Finding]:
+        """Flag instruction-register clusters that diverge from the document baseline.
+
+        Stdlib approximation of PRD §14.3's denoising/reconstruction heuristic:
+        score each sentence for instruction-payload characteristics, then flag
+        contiguous spans that score well above the document's median sentence
+        score when the document is otherwise clean. This catches injections
+        buried inside benign web/retrieval content without firing on uniformly
+        instructional material (docs, how-tos) where `imperative_density` or
+        rule hits would fire instead.
+        """
+        sentences = self._split_sentences(text)
+        if len(sentences) < 3:
+            return []
+
+        scores = [self._sentence_score(s) for _, _, s in sentences]
+        baseline = statistics.median(scores)
+
+        # Only fire when the *document* reads as mostly non-instructional.
+        # Uniformly imperative content (how-tos) will have a high baseline and
+        # is handled by `imperative_density` / rule hits, not by this signal.
+        if baseline >= 0.25:
+            return []
+
+        threshold = max(0.45, baseline * 3.0 + 0.15)
+        anomalous = [i for i, s in enumerate(scores) if s >= threshold]
+        if not anomalous:
+            return []
+
+        out: list[Finding] = []
+        cluster_start = anomalous[0]
+        prev = anomalous[0]
+        for idx in anomalous[1:] + [None]:
+            if idx is None or idx != prev + 1:
+                start_char = sentences[cluster_start][0]
+                end_char = sentences[prev][1]
+                size = prev - cluster_start + 1
+                out.append(Finding(
+                    category=RiskCategory.STRUCTURAL_ANOMALY,
+                    reason=(
+                        f"instruction-register cluster ({size} sentence"
+                        f"{'s' if size > 1 else ''}) diverges from document baseline"
+                    ),
+                    span=(start_char, end_char),
+                    rule="semantic_anomaly_cluster",
+                    score=min(0.4 + 0.15 * size, 0.82),
+                ))
+                if idx is not None:
+                    cluster_start = idx
+            if idx is not None:
+                prev = idx
+
+        return out
+
+    def _split_sentences(self, text: str) -> list[tuple[int, int, str]]:
+        """Return (start, end, sentence_text) triples preserving offsets."""
+        if not text.strip():
+            return []
+        spans: list[tuple[int, int, str]] = []
+        cursor = 0
+        for match in _SENTENCE_SPLIT.finditer(text):
+            end = match.start()
+            chunk = text[cursor:end]
+            if chunk.strip():
+                spans.append((cursor, end, chunk))
+            cursor = match.end()
+        tail = text[cursor:]
+        if tail.strip():
+            spans.append((cursor, len(text), tail))
+        return spans
+
+    def _sentence_score(self, sentence: str) -> float:
+        """Score a single sentence 0.0–1.0 on instruction-payload features."""
+        score = 0.0
+        if _IMPERATIVE_START.search(sentence):
+            score += 0.35
+        if _MODAL_COMMAND.search(sentence):
+            score += 0.30
+        if _OVERRIDE_REF.search(sentence):
+            score += 0.30
+        words = max(len(sentence.split()), 1)
+        second_person_hits = len(_SECOND_PERSON.findall(sentence))
+        if second_person_hits:
+            score += min(0.25, 0.10 + 0.05 * second_person_hits)
+        # Short, punchy sentences are more command-like than long prose.
+        if words <= 18 and (_IMPERATIVE_START.search(sentence) or _MODAL_COMMAND.search(sentence)):
+            score += 0.10
+        return min(score, 1.0)
