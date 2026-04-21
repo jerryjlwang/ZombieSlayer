@@ -52,6 +52,54 @@ for rec in summary.records:
     # zs.review.reprocess_clean(rec.result.item.id)
 ```
 
+## Claude Code plugin
+
+ZombieSlayer ships a PostToolUse hook that scans every `WebFetch` and
+`WebSearch` result in real time and blocks suspicious content before it
+reaches the model. A `/zs-review` slash command shows the quarantine log
+at the end of a session.
+
+**1. Install the package**
+
+```bash
+pip install -e /path/to/ZombieSlayer
+```
+
+**2. Register the hook**
+
+Add to `.claude/settings.json` in your project (create if it doesn't exist):
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "WebFetch|WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /path/to/ZombieSlayer/.claude-plugin/hooks/scan_tool_output.py"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**3. Install the slash command**
+
+```bash
+mkdir -p .claude/commands
+cp /path/to/ZombieSlayer/.claude-plugin/commands/zs-review.md .claude/commands/zs-review.md
+```
+
+**4. Use it**
+
+Claude Code will now scan every web fetch automatically. Suspicious content
+is blocked and logged to `.zombieslayer/session.jsonl`. Run `/zs-review` at
+any point to see the quarantine summary for the current session.
+
 ## Features
 
 - Rule-based detector (override, exfiltration, unsafe-action, persistence)
