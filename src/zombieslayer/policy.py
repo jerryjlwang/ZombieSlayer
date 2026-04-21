@@ -20,6 +20,8 @@ class Policy:
             (SourceTrust.UNTRUSTED, ScanMode.FAST): 0.55,
             (SourceTrust.RETRIEVAL, ScanMode.STRICT): 0.45,
             (SourceTrust.RETRIEVAL, ScanMode.FAST): 0.65,
+            (SourceTrust.TOOL_OUTPUT, ScanMode.STRICT): 0.40,
+            (SourceTrust.TOOL_OUTPUT, ScanMode.FAST): 0.60,
             (SourceTrust.DEVELOPER, ScanMode.STRICT): 0.7,
             (SourceTrust.DEVELOPER, ScanMode.FAST): 0.85,
             (SourceTrust.USER, ScanMode.STRICT): 0.8,

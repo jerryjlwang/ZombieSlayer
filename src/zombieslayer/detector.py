@@ -146,25 +146,48 @@ class Detector:
     Returns findings; aggregation and quarantine decisions live in `Policy`.
     """
 
-    def __init__(self, rules: tuple[Rule, ...] = _RULES) -> None:
+    def __init__(
+        self,
+        rules: tuple[Rule, ...] = _RULES,
+        disabled_rules: set[str] | None = None,
+        score_overrides: dict[str, float] | None = None,
+    ) -> None:
         self.rules = rules
+        self.disabled_rules: set[str] = set(disabled_rules or ())
+        self.score_overrides: dict[str, float] = dict(score_overrides or {})
 
     def scan(self, item: ContentItem) -> list[Finding]:
         findings: list[Finding] = []
         text = item.text
 
         for rule in self.rules:
+            if rule.name in self.disabled_rules:
+                continue
+            score = self.score_overrides.get(rule.name, rule.score)
             for m in rule.pattern.finditer(text):
                 findings.append(Finding(
                     category=rule.category,
                     reason=rule.reason,
                     span=(m.start(), m.end()),
                     rule=rule.name,
-                    score=rule.score,
+                    score=score,
                 ))
 
         findings.extend(self._structural(text))
         findings.extend(self._denoising(text))
+        if self.disabled_rules:
+            findings = [f for f in findings if f.rule not in self.disabled_rules]
+        if self.score_overrides:
+            findings = [
+                Finding(
+                    category=f.category,
+                    reason=f.reason,
+                    span=f.span,
+                    rule=f.rule,
+                    score=self.score_overrides.get(f.rule, f.score),
+                )
+                for f in findings
+            ]
         return findings
 
     def _structural(self, text: str) -> list[Finding]:
