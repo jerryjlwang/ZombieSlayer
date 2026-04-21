@@ -17,6 +17,7 @@ class RiskCategory(str, enum.Enum):
 class SourceTrust(str, enum.Enum):
     UNTRUSTED = "untrusted"        # web, random retrieval
     RETRIEVAL = "retrieval"        # indexed corpus, still external
+    TOOL_OUTPUT = "tool_output"    # text returned by a tool/function call
     DEVELOPER = "developer"        # developer-configured
     USER = "user"                  # explicit user input
 
@@ -134,7 +135,13 @@ class ReviewSummary:
                 lines.append(f"    Categories: {cats_str}")
 
             if rec.action is None:
+                from zombieslayer.remediation import recommend
+                tip = recommend(rec)
                 lines.append("    Actions: exclude | include | reprocess-clean")
+                lines.append(
+                    f"    \u2192 Suggested: {tip.action.value} "
+                    f"({tip.confidence:.0%}) \u2014 {tip.rationale}"
+                )
             elif rec.action == ReviewAction.REPROCESS_CLEAN and rec.result.sanitized_text:
                 lines.append(f"    {_CHECK} Sanitized text available for rerun")
 

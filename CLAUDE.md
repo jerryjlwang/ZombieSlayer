@@ -17,11 +17,16 @@ is useful while editing code.
   - `types.py` — dataclasses and enums (`ContentItem`, `ScanResult`, `RiskCategory`, `SourceTrust`, `ScanMode`, `PersistenceTarget`, `ReviewAction`)
   - `detector.py` — rule engine + structural anomaly signals (zero-width chars, imperative density)
   - `policy.py` — source-aware thresholds, aggregate scoring (`1 - Π(1 - s)`)
+  - `admin.py` — `AdminPolicy` (disabled rules, source allow/deny lists, threshold overrides)
   - `quarantine.py` — in-memory store keyed by `ContentItem.id`
-  - `scanner.py` — `IntakeScanner` for retrieval/web content
+  - `scanner.py` — `IntakeScanner` for retrieval/web/tool content
   - `persistence.py` — `PersistenceGuard` for memory/summary/handoff writes + retro-scan
   - `review.py` — end-of-task `exclude` / `include` / `reprocess_clean`
+  - `remediation.py` — automatic recovery-action recommendations
+  - `topology.py` — handoff-graph tracker for multi-agent / tainted-lineage views
+  - `audit.py` — append-only JSONL audit log for compliance export
   - `plugin.py` — `ZombieSlayer` facade, callback hooks, deferred actions
+- `.claude-plugin/` — Claude Code plugin manifest, hooks, commands
 - `tests/` — pytest suite
 
 ## Common commands
@@ -64,8 +69,24 @@ Structural signals (multi-line, cross-pattern) go in `Detector._structural`.
   goes in `tests/test_plugin.py`.
 - Tests must not require network or external services.
 
-## Out of scope for MVP (see PRD §7, §12)
+## Scope
 
-Do not add: tool-output scanning, enterprise admin, multi-agent topology
-views, non-Claude provider adapters, model-based classifiers. These are
-Phase 4+.
+The MVP (PRD §12) is done. The project is now building toward its end goal:
+a **Claude Code plugin** that wraps the core engine. Post-MVP features from
+PRD §12 are in scope — tool-output scanning, fine-grained admin policies,
+multi-agent handoff topology, automatic remediation recommendations, and
+audit exports are all welcome.
+
+Still out of scope:
+- **Non-Claude provider adapters** — conflicts with the Claude-plugin goal.
+- **Model-based classifiers in the core engine** — the core must stay
+  stdlib-only so integrators can vendor it cheaply (see "Design rules").
+  A plugin layer may call Claude itself; the engine may not.
+
+## Claude plugin layout
+
+The Claude Code plugin lives under `.claude-plugin/`:
+- `plugin.json` — plugin manifest
+- `hooks/hooks.json` — PostToolUse hooks that scan WebFetch output
+- `hooks/scan_tool_output.py` — hook script, invokes `ZombieSlayer`
+- `commands/zs-review.md` — `/zs-review` slash command

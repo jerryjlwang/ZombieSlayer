@@ -1,0 +1,6 @@
+{
+  "name": "zombieslayer",
+  "version": "0.1.0",
+  "description": "Safeguard Claude-centered agents from zombie prompt injections in web/retrieval/tool content.",
+  "author": "ZombieSlayer"
+}
