@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "WebFetch|WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ../.claude-plugin/hooks/scan_tool_output.py"
+          }
+        ]
+      }
+    ]
+  }
+}
