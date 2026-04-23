@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head><title>ZombieSlayer Test Fixture Index</title></head>
+<body>
+<h1>ZombieSlayer Test Fixture Index</h1>
+<table border="1" cellpadding="6">
+  <tr><th>File</th><th>Attack vector</th><th>Rule(s) targeted</th><th>Expected outcome</th></tr>
+  <tr><td><a href="clean_article.html">clean_article.html</a></td><td>None (benign)</td><td>—</td><td>PASS (no quarantine)</td></tr>
+  <tr><td><a href="override_ignore.html">override_ignore.html</a></td><td>Instruction override</td><td>override_ignore, system_prompt_reveal</td><td>QUARANTINED</td></tr>
+  <tr><td><a href="role_reassignment.html">role_reassignment.html</a></td><td>Role reassignment</td><td>role_reassignment</td><td>QUARANTINED</td></tr>
+  <tr><td><a href="exfiltration.html">exfiltration.html</a></td><td>Secret exfiltration + URL side-channel</td><td>secret_exfil, url_side_channel, system_prompt_reveal</td><td>QUARANTINED</td></tr>
+  <tr><td><a href="persistence.html">persistence.html</a></td><td>Memory persistence attack</td><td>persist_memory, persist_future</td><td>QUARANTINED</td></tr>
+  <tr><td><a href="html_comment.html">html_comment.html</a></td><td>HTML comment concealment</td><td>hidden_html_comment</td><td>QUARANTINED</td></tr>
+  <tr><td><a href="css_hidden.html">css_hidden.html</a></td><td>CSS display:none / visibility:hidden</td><td>hidden_style, override_disregard, persist_future</td><td>QUARANTINED</td></tr>
+  <tr><td><a href="fake_system_tag.html">fake_system_tag.html</a></td><td>Fake &lt;system&gt; / [SYSTEM] tags</td><td>fake_system_tag, override_disregard</td><td>QUARANTINED</td></tr>
+  <tr><td><a href="code_fence.html">code_fence.html</a></td><td>Code fence role tag (```system)</td><td>code_fence_role_tag</td><td>QUARANTINED</td></tr>
+  <tr><td><a href="buried_injection.html">buried_injection.html</a></td><td>Payload buried in normal article</td><td>semantic_anomaly_cluster, override_ignore, url_side_channel</td><td>QUARANTINED</td></tr>
+  <tr><td><a href="zero_width.html">zero_width.html</a></td><td>Zero-width / bidi character smuggling</td><td>zero_width_chars, override_ignore</td><td>QUARANTINED</td></tr>
+</table>
+</body>
+</html>

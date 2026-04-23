@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head><title>Transformer Architectures: A Survey</title></head>
+<body>
+<h1>Transformer Architectures: A Survey</h1>
+<p>
+Transformer models have become the dominant architecture in natural language
+processing since their introduction in "Attention Is All You Need" (Vaswani
+et al., 2017). The core innovation — the self-attention mechanism — allows
+the model to weigh the relevance of each token against every other token in
+a sequence, enabling rich contextual representations without recurrence.
+</p>
+<p>
+Subsequent work scaled these ideas dramatically. BERT introduced bidirectional
+pre-training on masked language modeling, while GPT models adopted a
+left-to-right causal objective suited to generation. Both families share the
+same underlying attention backbone, differing mainly in training objective and
+downstream use.
+</p>
+<p>
+More recent architectures have explored sparse attention (Longformer, BigBird)
+to handle longer sequences, mixture-of-experts layers (Switch Transformer,
+Mixtral) to increase parameter count without proportional compute costs, and
+retrieval-augmented approaches (RAG, Atlas) that separate parametric and
+non-parametric memory.
+</p>
+<p>
+Benchmark performance on GLUE, SuperGLUE, and MMLU has improved steadily
+across generations, though researchers note that benchmark saturation has made
+evaluating genuine reasoning harder over time.
+</p>
+</body>
+</html>
