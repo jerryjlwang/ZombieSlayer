@@ -3,9 +3,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from zombieslayer.admin import AdminPolicy
+from zombieslayer.behavior import BehaviorAlert, BehaviorMonitor
 from zombieslayer.detector import Detector
 from zombieslayer.policy import Policy
 from zombieslayer.quarantine import QuarantineStore
+from zombieslayer.replay import ReplayTracker
 from zombieslayer.types import (
     ContentItem,
     Finding,
@@ -29,11 +31,18 @@ class IntakeScanner:
         policy: Policy,
         store: QuarantineStore,
         admin: AdminPolicy | None = None,
+        replay: ReplayTracker | None = None,
+        behavior: BehaviorMonitor | None = None,
     ) -> None:
         self.detector = detector
         self.policy = policy
         self.store = store
         self.admin = admin or AdminPolicy()
+        self.replay = replay
+        self.behavior = behavior
+        # Populated by scan_item when behavior is active; consumed by the
+        # plugin facade to fire callbacks.
+        self._pending_alerts: list[BehaviorAlert] = []
 
     def scan_item(self, item: ContentItem) -> ScanResult:
         # Allowlist short-circuits scanning entirely.
@@ -49,10 +58,16 @@ class IntakeScanner:
                 span=(0, min(len(item.text), 1)),
                 rule="admin_denylist",
                 score=1.0,
+                kind="deny",
             )]
             result = ScanResult(item=item, findings=findings, score=1.0, quarantined=True)
             self.store.add(result)
             return result
+
+        # Cross-source replay: additional findings folded into aggregate score.
+        if self.replay is not None:
+            replay_findings = self.replay.observe(item)
+            findings = findings + replay_findings
 
         threshold = self.admin.threshold_overrides.get(
             (item.trust, self.policy.mode), self.policy.threshold(item.trust)
@@ -64,6 +79,12 @@ class IntakeScanner:
         )
         if quarantine:
             self.store.add(result)
+
+        if self.behavior is not None:
+            alerts = self.behavior.record(result, threshold=threshold)
+            if alerts:
+                self._pending_alerts.extend(alerts)
+
         return result
 
     def scan_batch(
@@ -90,3 +111,8 @@ class IntakeScanner:
             text=output, source=f"tool:{tool_name}", trust=trust
         )
         return self.scan_item(item)
+
+    def drain_alerts(self) -> list[BehaviorAlert]:
+        alerts = self._pending_alerts
+        self._pending_alerts = []
+        return alerts

@@ -66,6 +66,31 @@ class AuditLog:
             "derived_from": list(derived_from),
         })
 
+    def record_behavior_alert(self, alert: Any) -> None:
+        """Record a BehaviorMonitor alert (issue #2 §5)."""
+        self._emit({
+            "event": "behavior_alert",
+            "source": getattr(alert, "source", ""),
+            "kind": getattr(alert, "kind", ""),
+            "detail": getattr(alert, "detail", ""),
+            "severity": getattr(alert, "severity", 0.0),
+        })
+
+    def record_regression(self, item_id: str) -> None:
+        """Record an operator-reported regression (issue #2 §6)."""
+        self._emit({
+            "event": "regression",
+            "item_id": item_id,
+        })
+
+    def record_replay(self, source: str, matched_sources: list[str]) -> None:
+        """Record a cross-source replay finding (issue #2 §4)."""
+        self._emit({
+            "event": "replay_match",
+            "source": source,
+            "matched_sources": list(matched_sources),
+        })
+
     # ---- output --------------------------------------------------------
     def _emit(self, payload: dict[str, Any]) -> None:
         payload = {"ts": time.time(), **payload}

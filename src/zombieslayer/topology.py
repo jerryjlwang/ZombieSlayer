@@ -59,8 +59,19 @@ class HandoffGraph:
     def roots(self) -> list[str]:
         return sorted(n for n in self.labels if not self._rev.get(n))
 
-    def render(self) -> str:
-        """Indent-tree view marking tainted nodes and tainted-reachable ones."""
+    def render(self, format: str = "indent") -> str:
+        """Render the topology.
+
+        - `format="indent"` (default): compact indent tree marking tainted
+          nodes and their reachable descendants.
+        - `format="mermaid"`: emit Mermaid source (flowchart LR) so operators
+          can paste into any Mermaid-aware viewer (issue #2 §7).
+        """
+        if format == "mermaid":
+            return self._render_mermaid()
+        return self._render_indent()
+
+    def _render_indent(self) -> str:
         if not self.labels:
             return "ZombieSlayer \u2014 no handoff edges recorded."
 
@@ -87,3 +98,56 @@ class HandoffGraph:
         for root in self.roots():
             walk(root, 0)
         return "\n".join(lines)
+
+    def _render_mermaid(self) -> str:
+        if not self.labels:
+            return "flowchart LR\n  empty[no handoff edges]"
+        reach = self.tainted_reach()
+        lines = ["flowchart LR"]
+        ids: dict[str, str] = {}
+        for i, node in enumerate(sorted(self.labels)):
+            safe = f"n{i}"
+            ids[node] = safe
+            label = self.labels[node].replace('"', "'")
+            lines.append(f'  {safe}["{label}"]')
+        for parent, children in sorted(self._edges.items()):
+            for child in sorted(children):
+                if parent in ids and child in ids:
+                    lines.append(f"  {ids[parent]} --> {ids[child]}")
+        # Tainted styling
+        for node in sorted(self.tainted):
+            if node in ids:
+                lines.append(f"  class {ids[node]} tainted;")
+        for node in sorted(reach - self.tainted):
+            if node in ids:
+                lines.append(f"  class {ids[node]} taintedReach;")
+        lines.append("  classDef tainted fill:#fcc,stroke:#c00,stroke-width:2px;")
+        lines.append("  classDef taintedReach fill:#fee,stroke:#c60;")
+        return "\n".join(lines)
+
+    # ---- multi-agent merge (issue #2 §7) --------------------------------
+    def merge(self, other: HandoffGraph, as_subgraph: str) -> None:
+        """Import another agent's topology under a namespace prefix.
+
+        Nodes from `other` become `f"{as_subgraph}:{node_id}"` here, so two
+        agents with overlapping ids stay distinct. Taint flags are preserved.
+        """
+        prefix = f"{as_subgraph}:"
+        for nid, label in other.labels.items():
+            self.add_node(prefix + nid, f"{as_subgraph}/{label}")
+        for parent, children in other._edges.items():
+            for child in children:
+                self.add_edge(prefix + parent, prefix + child)
+        for nid in other.tainted:
+            self.mark_tainted(prefix + nid)
+
+    def link_agents(self, parent_agent_node: str, child_agent_node: str) -> None:
+        """Record a cross-agent handoff after a merge."""
+        self.add_edge(parent_agent_node, child_agent_node)
+
+    def propagate_taint(self) -> set[str]:
+        """Recompute taint-reach; returns nodes newly implicated."""
+        reach = self.tainted_reach()
+        # No mutation to `tainted` itself — reach is derived. Return for
+        # operator visibility.
+        return reach - self.tainted
