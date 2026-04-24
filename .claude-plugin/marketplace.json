@@ -1,0 +1,13 @@
+{
+  "name": "zombieslayer-plugins",
+  "owner": {
+    "name": "jerryjlwang"
+  },
+  "plugins": [
+    {
+      "name": "zombieslayer",
+      "source": ".",
+      "description": "Safeguard Claude-centered agents from zombie prompt injections in web/retrieval/tool content."
+    }
+  ]
+}

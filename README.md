@@ -59,15 +59,44 @@ ZombieSlayer ships a PostToolUse hook that scans every `WebFetch` and
 reaches the model. A `/zs-review` slash command shows the quarantine log
 at the end of a session.
 
-**1. Install the package**
+Once installed the hook fires on **every** `WebFetch` and `WebSearch`
+across **every** Claude Code session — you do not need a browser-agent
+project to benefit.
+
+### Install (recommended)
+
+From inside Claude Code:
+
+```
+/plugin marketplace add jerryjlwang/ZombieSlayer
+/plugin install zombieslayer@zombieslayer-plugins
+```
+
+If the hook doesn't activate immediately, reload plugins:
+
+```
+/reload-plugins
+```
+
+That's it. Suspicious content is blocked and logged to
+`.zombieslayer/session.jsonl` in the project you're working in. Run
+`/zs-review` at any point to see the quarantine summary for the session.
+
+To pause without uninstalling: `/plugin disable zombieslayer`.
+
+### Per-project setup (alternative)
+
+If you'd rather wire the hook into a single project instead of installing
+it globally:
+
+**1. Clone and install the package**
 
 ```bash
+git clone https://github.com/jerryjlwang/ZombieSlayer /path/to/ZombieSlayer
 pip install -e /path/to/ZombieSlayer
 ```
 
-**2. Register the hook**
-
-Add to `.claude/settings.json` in your project (create if it doesn't exist):
+**2. Register the hook** in your project's `.claude/settings.json`:
 
 ```json
 {
@@ -87,18 +116,14 @@ Add to `.claude/settings.json` in your project (create if it doesn't exist):
 }
 ```
 
-**3. Install the slash command**
+**3. Copy the slash command:**
 
 ```bash
 mkdir -p .claude/commands
 cp /path/to/ZombieSlayer/.claude-plugin/commands/zs-review.md .claude/commands/zs-review.md
 ```
 
-**4. Use it**
-
-Claude Code will now scan every web fetch automatically. Suspicious content
-is blocked and logged to `.zombieslayer/session.jsonl`. Run `/zs-review` at
-any point to see the quarantine summary for the current session.
+The hook will now run only in this project.
 
 ## Features
 
