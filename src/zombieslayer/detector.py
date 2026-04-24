@@ -87,15 +87,69 @@ _RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "hidden_style",
-        re.compile(r"style\s*=\s*\"[^\"]*(?:display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0)", re.I),
+        re.compile(
+            r"style\s*=\s*\"[^\"]*(?:"
+            r"display\s*:\s*none"
+            r"|visibility\s*:\s*hidden"
+            r"|font-size\s*:\s*0"
+            r"|opacity\s*:\s*0(?!\.)"
+            r"|clip-path\s*:\s*(?:inset\(\s*100%|circle\(\s*0)"
+            r"|(?:left|top|right|bottom)\s*:\s*-\d{3,}(?:px|em|rem|vh|vw)"
+            r")",
+            re.I,
+        ),
         RiskCategory.STRUCTURAL_ANOMALY, 0.6,
         "content hidden via CSS",
+    ),
+    Rule(
+        "hidden_color_match",
+        re.compile(
+            r"style\s*=\s*\"[^\"]*(?:"
+            r"color\s*:\s*(?:#fff(?:fff)?|white)\b[^\"]*background(?:-color)?\s*:\s*(?:#fff(?:fff)?|white)\b"
+            r"|background(?:-color)?\s*:\s*(?:#fff(?:fff)?|white)\b[^\"]*color\s*:\s*(?:#fff(?:fff)?|white)\b"
+            r"|color\s*:\s*(?:#0{3}(?:0{3})?|black)\b[^\"]*background(?:-color)?\s*:\s*(?:#0{3}(?:0{3})?|black)\b"
+            r"|background(?:-color)?\s*:\s*(?:#0{3}(?:0{3})?|black)\b[^\"]*color\s*:\s*(?:#0{3}(?:0{3})?|black)\b"
+            r")",
+            re.I,
+        ),
+        RiskCategory.STRUCTURAL_ANOMALY, 0.6,
+        "text color matches background (invisible text)",
     ),
     Rule(
         "fake_system_tag",
         re.compile(r"<\s*(?:system|assistant|developer)\s*>|\[(?:SYSTEM|ASSISTANT|DEVELOPER)\]", re.I),
         RiskCategory.INSTRUCTION_OVERRIDE, 0.75,
         "fake role/system tag in external content",
+    ),
+    Rule(
+        "chatml_role_token",
+        re.compile(r"<\|im_start\|>\s*(?:system|user|assistant|developer)\b|<\|im_end\|>", re.I),
+        RiskCategory.INSTRUCTION_OVERRIDE, 0.75,
+        "ChatML role delimiter in external content",
+    ),
+    Rule(
+        "llama_inst_token",
+        re.compile(r"\[INST\].{0,500}?\[/INST\]|<<SYS>>.{0,500}?<</SYS>>", re.I | re.S),
+        RiskCategory.INSTRUCTION_OVERRIDE, 0.75,
+        "Llama-style instruction/system delimiter pair",
+    ),
+    Rule(
+        "fake_transcript_json",
+        re.compile(
+            r'"role"\s*:\s*"(?:system|assistant|developer)"\s*,?.{0,200}?"content"\s*:',
+            re.I | re.S,
+        ),
+        RiskCategory.INSTRUCTION_OVERRIDE, 0.7,
+        "JSON transcript payload with role/content fields",
+    ),
+    Rule(
+        "fake_transcript_yaml",
+        re.compile(
+            r"^\s*-?\s*role\s*:\s*(?:system|assistant|developer)\b.{0,200}?^\s*content\s*:",
+            re.I | re.M | re.S,
+        ),
+        RiskCategory.INSTRUCTION_OVERRIDE, 0.65,
+        "YAML transcript payload with role/content fields",
     ),
     Rule(
         "code_fence_role_tag",
