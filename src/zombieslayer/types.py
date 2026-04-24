@@ -58,6 +58,11 @@ class Finding:
     span: tuple[int, int]          # (start, end) char offsets
     rule: str
     score: float                   # 0.0 - 1.0
+    kind: str = "generic"          # short noun for context-preserving redaction
+    # Optional structured metadata:
+    #   "decoded_from": which decoder surfaced this finding (base64, url, ...)
+    #   "metadata_key": if finding came from ContentItem.metadata, the key name
+    evidence: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -67,6 +72,7 @@ class ScanResult:
     score: float                   # aggregate suspiciousness
     quarantined: bool
     sanitized_text: str | None = None  # populated on reprocess-clean
+    sanitized_metadata: dict[str, Any] | None = None  # populated on reprocess-clean
 
     @property
     def categories(self) -> list[RiskCategory]:
@@ -75,6 +81,41 @@ class ScanResult:
             if f.category not in seen:
                 seen.append(f.category)
         return seen
+
+    def explain(self, threshold: float | None = None) -> str:
+        """Decision-tree style trace of why this item was (not) quarantined."""
+        lines: list[str] = []
+        src = self.item.source or "(unknown source)"
+        lines.append(f"ScanResult — source={src} trust={self.item.trust.value}")
+        if not self.findings:
+            lines.append("  no findings fired")
+        else:
+            lines.append(f"  findings ({len(self.findings)}):")
+            for f in sorted(self.findings, key=lambda x: -x.score):
+                decoded = f.evidence.get("decoded_from")
+                meta_key = f.evidence.get("metadata_key")
+                extras: list[str] = []
+                if decoded:
+                    extras.append(f"decoded={decoded}")
+                if meta_key:
+                    extras.append(f"metadata_key={meta_key}")
+                tail = f" [{', '.join(extras)}]" if extras else ""
+                lines.append(
+                    f"    - {f.rule} ({f.category.value}) score={f.score:.2f} "
+                    f"span={f.span} kind={f.kind}{tail}"
+                )
+                lines.append(f"      {f.reason}")
+        lines.append(f"  aggregate score = {self.score:.3f}")
+        if threshold is not None:
+            cmp = ">=" if self.score >= threshold else "<"
+            lines.append(
+                f"  policy threshold = {threshold:.3f}  "
+                f"(score {cmp} threshold \u2192 "
+                f"{'QUARANTINE' if self.quarantined else 'allow'})"
+            )
+        else:
+            lines.append(f"  quarantined = {self.quarantined}")
+        return "\n".join(lines)
 
 
 @dataclass

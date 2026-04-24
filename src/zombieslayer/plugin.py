@@ -6,11 +6,13 @@ from typing import Any
 
 from zombieslayer.admin import AdminPolicy
 from zombieslayer.audit import AuditLog
+from zombieslayer.behavior import BehaviorAlert, BehaviorMonitor
 from zombieslayer.detector import Detector
 from zombieslayer.persistence import PersistenceGuard
 from zombieslayer.policy import Policy
 from zombieslayer.quarantine import QuarantineStore
 from zombieslayer.remediation import Recommendation, recommend
+from zombieslayer.replay import ReplayTracker
 from zombieslayer.review import ReviewFlow
 from zombieslayer.scanner import IntakeScanner
 from zombieslayer.topology import HandoffGraph
@@ -30,6 +32,7 @@ from zombieslayer.types import (
 OnQuarantine = Callable[[ScanResult], None]
 OnBlockedWrite = Callable[[PersistenceDecision], None]
 OnReview = Callable[[ReviewSummary], None]
+OnBehaviorAlert = Callable[[BehaviorAlert], None]
 
 
 @dataclass
@@ -56,10 +59,13 @@ class ZombieSlayer:
     admin: AdminPolicy = field(default_factory=AdminPolicy)
     audit: AuditLog = field(default_factory=AuditLog)
     topology: HandoffGraph = field(default_factory=HandoffGraph)
+    replay: ReplayTracker | None = field(default_factory=ReplayTracker)
+    behavior: BehaviorMonitor | None = field(default_factory=BehaviorMonitor)
 
     on_quarantine: OnQuarantine | None = None
     on_blocked_write: OnBlockedWrite | None = None
     on_review: OnReview | None = None
+    on_behavior_alert: OnBehaviorAlert | None = None
 
     _deferred: list[DeferredAction] = field(default_factory=list)
 
@@ -69,7 +75,6 @@ class ZombieSlayer:
         else:
             self.policy.mode = self.mode
 
-        # Apply admin overrides to detector + policy.
         if self.admin.disabled_rules:
             self.detector.disabled_rules |= self.admin.disabled_rules
         if self.admin.rule_score_overrides:
@@ -77,7 +82,10 @@ class ZombieSlayer:
         if self.admin.threshold_overrides:
             self.policy.thresholds.update(self.admin.threshold_overrides)
 
-        self.scanner = IntakeScanner(self.detector, self.policy, self.store, self.admin)
+        self.scanner = IntakeScanner(
+            self.detector, self.policy, self.store, self.admin,
+            replay=self.replay, behavior=self.behavior,
+        )
         self.guard = PersistenceGuard(self.detector, self.policy, self.store)
         self.review = ReviewFlow(self.detector, self.store)
 
@@ -94,6 +102,7 @@ class ZombieSlayer:
                 self.on_quarantine(r)
         for r in safe:
             self.topology.add_node(r.item.id, r.item.source)
+        self._flush_behavior_alerts()
         return safe, quarantined
 
     def scan_tool_output(
@@ -107,7 +116,15 @@ class ZombieSlayer:
             self.audit.record_quarantine(result)
             if self.on_quarantine:
                 self.on_quarantine(result)
+        self._flush_behavior_alerts()
         return result
+
+    def _flush_behavior_alerts(self) -> None:
+        alerts = self.scanner.drain_alerts()
+        for alert in alerts:
+            self.audit.record_behavior_alert(alert)
+            if self.on_behavior_alert:
+                self.on_behavior_alert(alert)
 
     # ---- persistence ---------------------------------------------------
     def check_write(
@@ -120,7 +137,6 @@ class ZombieSlayer:
         derived_from = tuple(derived_from)
         decision = self.guard.check_write(text, target, derived_from)
 
-        # Record topology regardless of decision — the attempt itself is a node.
         if artifact_id is None:
             artifact_id = f"{target.value}:{len(self.topology.labels)}"
         self.topology.add_node(artifact_id, artifact_id)
@@ -200,3 +216,38 @@ class ZombieSlayer:
             rec = self.review.reprocess_clean(item_id)
         self.audit.record_review_action(item_id, action)
         return rec
+
+    # ---- operator feedback loop (issue #2 §6) --------------------------
+    def mark_regression(self, item_id: str, delta: float = 0.05) -> None:
+        """Operator reports that an INCLUDE decision caused a regression.
+
+        Soft-learning: lower the per-(trust, mode) threshold for the affected
+        trust tier so future content with similar scores is quarantined. Also
+        nudges the dominant rule's score up by `delta` so its weight reflects
+        the observed impact (never above 1.0, never auto-disabled).
+        """
+        rec = self.store.get(item_id)
+        if rec is None:
+            return
+        self.admin.record_feedback(item_id, "regression")
+        self.audit.record_regression(item_id)
+
+        trust = rec.result.item.trust
+        mode = self.policy.mode  # type: ignore[union-attr]
+        cur_thr = self.policy.thresholds.get((trust, mode), 0.5)  # type: ignore[union-attr]
+        new_thr = max(0.05, cur_thr - delta)
+        self.policy.thresholds[(trust, mode)] = new_thr  # type: ignore[union-attr]
+        self.admin.threshold_overrides[(trust, mode)] = new_thr
+
+        if rec.result.findings:
+            dominant = max(rec.result.findings, key=lambda f: f.score).rule
+            current = self.detector.score_overrides.get(dominant)
+            if current is None:
+                for r in self.detector.rules:
+                    if r.name == dominant:
+                        current = r.score
+                        break
+            if current is not None:
+                new_score = min(1.0, current + delta)
+                self.detector.score_overrides[dominant] = new_score
+                self.admin.rule_score_overrides[dominant] = new_score
