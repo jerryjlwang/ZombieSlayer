@@ -14,9 +14,11 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+intent = ["anthropic>=0.40"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["zombieslayer*", "zombieslayer_integrations*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

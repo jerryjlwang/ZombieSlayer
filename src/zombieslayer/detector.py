@@ -336,6 +336,7 @@ class Detector:
                     rule=f.rule,
                     score=self.score_overrides.get(f.rule, f.score),
                     kind=f.kind,
+                    family=f.family,
                     evidence=f.evidence,
                 )
                 for f in findings
@@ -370,6 +371,7 @@ class Detector:
                     rule=rule.name,
                     score=score,
                     kind=rule.kind,
+                    family="rules",
                     evidence=evidence,
                 ))
         return out
@@ -388,6 +390,7 @@ class Detector:
                 rule="zero_width_chars",
                 score=min(0.5 + 0.05 * len(zw_hits), 0.9),
                 kind="hidden",
+                family="structural",
             ))
 
         imp_hits = list(re.finditer(
@@ -404,6 +407,7 @@ class Detector:
                 rule="imperative_density",
                 score=min(0.4 + density, 0.85),
                 kind="command",
+                family="structural",
             ))
 
         return out
@@ -443,6 +447,7 @@ class Detector:
                     rule="semantic_anomaly_cluster",
                     score=min(0.4 + 0.15 * size, 0.82),
                     kind="command",
+                    family="structural",
                 ))
                 if idx is not None:
                     cluster_start = idx
@@ -628,6 +633,7 @@ class Detector:
                     rule="homograph_mixed_script",
                     score=0.55,
                     kind="hidden",
+                    family="structural",
                     evidence={"word": word},
                 ))
         return out
@@ -677,6 +683,7 @@ class Detector:
             rule="intent_verifier",
             score=min(max(score, 0.0), 1.0),
             kind="command",
+            family="intent",
             evidence={"source": "intent_verifier"},
         )]
 
