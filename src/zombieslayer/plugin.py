@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
@@ -48,6 +49,31 @@ class DeferredAction:
     executed: bool = False
 
 
+@dataclass(frozen=True)
+class RollbackEntry:
+    target: str
+    artifact_id: str
+    text_hash: str
+    ts: float
+
+
+@dataclass
+class RollbackPlan:
+    """An advisory rollback proposal (issue #6 §9).
+
+    The plugin surfaces what *would* be rolled back; the host application
+    actually undoes the writes. Entries are reverse-chronological so callers
+    can apply them safely.
+    """
+    reason: str
+    since: float
+    entries: list[RollbackEntry]
+
+    @property
+    def artifact_ids(self) -> list[str]:
+        return [e.artifact_id for e in self.entries]
+
+
 @dataclass
 class ZombieSlayer:
     """Plugin facade with sane defaults and callback hooks."""
@@ -66,6 +92,8 @@ class ZombieSlayer:
     on_blocked_write: OnBlockedWrite | None = None
     on_review: OnReview | None = None
     on_behavior_alert: OnBehaviorAlert | None = None
+
+    auto_retro_scan: bool = False
 
     _deferred: list[DeferredAction] = field(default_factory=list)
 
@@ -88,6 +116,9 @@ class ZombieSlayer:
         )
         self.guard = PersistenceGuard(self.detector, self.policy, self.store)
         self.review = ReviewFlow(self.detector, self.store)
+
+        if self.auto_retro_scan:
+            self._startup_retro_scan()
 
     # ---- intake --------------------------------------------------------
     def scan_intake(
@@ -146,8 +177,15 @@ class ZombieSlayer:
         if not decision.allowed:
             self.topology.mark_tainted(artifact_id)
             self.audit.record_blocked_write(decision)
+            poisoned = self.guard.last_poisoning_match
+            if poisoned is not None:
+                source_id, ratio = poisoned
+                self.audit.record_memory_poisoning(target.value, source_id, ratio)
             if self.on_blocked_write:
                 self.on_blocked_write(decision)
+        else:
+            text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            self.audit.record_persistence_write(target.value, artifact_id, text_hash)
         return decision
 
     def retro_scan(self, artifacts: Iterable[ContentItem]) -> list[ScanResult]:
@@ -159,6 +197,79 @@ class ZombieSlayer:
                 self.audit.record_quarantine(r)
                 if self.on_quarantine:
                     self.on_quarantine(r)
+        return results
+
+    def replay_artifacts(self, items: Iterable[ContentItem]) -> list[ScanResult]:
+        """Convenience alias for `retro_scan` (issue #6 §9).
+
+        Use when the host has artifacts (memory entries, summaries) that
+        weren't routed through the store but should be re-evaluated against
+        current rules.
+        """
+        return self.retro_scan(items)
+
+    # ---- rollback (issue #6 §9) ---------------------------------------
+    def propose_rollback(
+        self, reason: str, since: float | None = None
+    ) -> RollbackPlan:
+        """Build an advisory rollback plan covering writes after `since`.
+
+        The plugin does **not** undo memory writes itself — the host owns
+        that surface. Callers iterate `plan.entries` (newest first) and
+        unwind them in their own persistence layer, then call
+        `confirm_rollback(plan)` so the audit log records execution.
+
+        Args:
+            reason: Operator-facing description of why a rollback is needed.
+            since: Unix timestamp; entries with `ts >= since` are included.
+                Defaults to the timestamp of the first quarantined item still
+                in the store, falling back to 0 (full timeline).
+        """
+        if since is None:
+            quarantine_events = [
+                e for e in self.audit.events if e.get("event") == "quarantine"
+            ]
+            since = quarantine_events[0]["ts"] if quarantine_events else 0.0
+
+        entries: list[RollbackEntry] = []
+        for evt in self.audit.events:
+            if evt.get("event") != "persistence_write":
+                continue
+            if evt.get("ts", 0.0) < since:
+                continue
+            entries.append(RollbackEntry(
+                target=evt["target"],
+                artifact_id=evt["artifact_id"],
+                text_hash=evt["text_hash"],
+                ts=evt["ts"],
+            ))
+        entries.sort(key=lambda e: e.ts, reverse=True)
+
+        plan = RollbackPlan(reason=reason, since=since, entries=entries)
+        self.audit.record_rollback_proposed(reason, since, plan.artifact_ids)
+        return plan
+
+    def confirm_rollback(self, plan: RollbackPlan) -> None:
+        """Record host confirmation that the plan was applied externally."""
+        self.audit.record_rollback_executed(plan.artifact_ids)
+
+    def _startup_retro_scan(self) -> list[ScanResult]:
+        """Auto retro-scan all items the durable store knows about (issue #6 §9).
+
+        Pulls each `ContentItem` out of existing quarantine records and
+        re-runs detection. New quarantines from rule changes since the
+        record was written propagate via taint as usual; an audit entry
+        records the boot scan.
+        """
+        items = [rec.result.item for rec in self.store.all()]
+        if not items:
+            self.audit.record_retro_scan_startup(scanned=0, newly_quarantined=0)
+            return []
+        before = {rec.result.item.id for rec in self.store.all()}
+        results = self.retro_scan(items)
+        after = {rec.result.item.id for rec in self.store.all()}
+        newly = len(after - before)
+        self.audit.record_retro_scan_startup(scanned=len(items), newly_quarantined=newly)
         return results
 
     # ---- deferred actions (PRD §18) -----------------------------------

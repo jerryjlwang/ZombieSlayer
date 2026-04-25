@@ -5,9 +5,14 @@ from zombieslayer.audit import AuditLog
 from zombieslayer.behavior import BehaviorAlert, BehaviorMonitor
 from zombieslayer.detector import Detector
 from zombieslayer.persistence import PersistenceGuard
-from zombieslayer.plugin import DeferredAction, ZombieSlayer
+from zombieslayer.plugin import (
+    DeferredAction,
+    RollbackEntry,
+    RollbackPlan,
+    ZombieSlayer,
+)
 from zombieslayer.policy import Policy
-from zombieslayer.quarantine import QuarantineStore
+from zombieslayer.quarantine import JSONFileQuarantineStore, QuarantineStore
 from zombieslayer.remediation import Recommendation, recommend
 from zombieslayer.replay import ReplayTracker
 from zombieslayer.review import ReviewFlow
@@ -43,10 +48,13 @@ __all__ = [
     "PersistenceGuard",
     "PersistenceTarget",
     "Policy",
+    "JSONFileQuarantineStore",
     "QuarantineRecord",
     "QuarantineStore",
     "Recommendation",
     "ReplayTracker",
+    "RollbackEntry",
+    "RollbackPlan",
     "ReviewAction",
     "ReviewFlow",
     "ReviewSummary",

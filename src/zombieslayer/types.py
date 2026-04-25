@@ -49,6 +49,27 @@ class ContentItem:
     metadata: dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "text": self.text,
+            "source": self.source,
+            "trust": self.trust.value,
+            "chunk_ref": self.chunk_ref,
+            "metadata": dict(self.metadata),
+            "id": self.id,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ContentItem":
+        return cls(
+            text=d["text"],
+            source=d["source"],
+            trust=SourceTrust(d.get("trust", SourceTrust.UNTRUSTED.value)),
+            chunk_ref=d.get("chunk_ref"),
+            metadata=dict(d.get("metadata") or {}),
+            id=d.get("id") or uuid.uuid4().hex,
+        )
+
 
 @dataclass
 class Finding:
@@ -59,10 +80,40 @@ class Finding:
     rule: str
     score: float                   # 0.0 - 1.0
     kind: str = "generic"          # short noun for context-preserving redaction
+    # Signal family — used by ensemble voting in Policy.aggregate. One of
+    # "rules", "structural", "intent", "behavioral". Default "rules" matches
+    # the dominant case so legacy constructors keep working.
+    family: str = "rules"
     # Optional structured metadata:
     #   "decoded_from": which decoder surfaced this finding (base64, url, ...)
     #   "metadata_key": if finding came from ContentItem.metadata, the key name
     evidence: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "category": self.category.value,
+            "reason": self.reason,
+            "span": list(self.span),
+            "rule": self.rule,
+            "score": self.score,
+            "kind": self.kind,
+            "family": self.family,
+            "evidence": dict(self.evidence),
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "Finding":
+        span = d.get("span") or [0, 0]
+        return cls(
+            category=RiskCategory(d["category"]),
+            reason=d["reason"],
+            span=(int(span[0]), int(span[1])),
+            rule=d["rule"],
+            score=float(d["score"]),
+            kind=d.get("kind", "generic"),
+            family=d.get("family", "rules"),
+            evidence=dict(d.get("evidence") or {}),
+        )
 
 
 @dataclass
@@ -73,6 +124,29 @@ class ScanResult:
     quarantined: bool
     sanitized_text: str | None = None  # populated on reprocess-clean
     sanitized_metadata: dict[str, Any] | None = None  # populated on reprocess-clean
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "item": self.item.to_dict(),
+            "findings": [f.to_dict() for f in self.findings],
+            "score": self.score,
+            "quarantined": self.quarantined,
+            "sanitized_text": self.sanitized_text,
+            "sanitized_metadata":
+                dict(self.sanitized_metadata) if self.sanitized_metadata is not None else None,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ScanResult":
+        return cls(
+            item=ContentItem.from_dict(d["item"]),
+            findings=[Finding.from_dict(f) for f in d.get("findings") or []],
+            score=float(d["score"]),
+            quarantined=bool(d["quarantined"]),
+            sanitized_text=d.get("sanitized_text"),
+            sanitized_metadata=dict(d["sanitized_metadata"])
+                if d.get("sanitized_metadata") is not None else None,
+        )
 
     @property
     def categories(self) -> list[RiskCategory]:
@@ -122,6 +196,20 @@ class ScanResult:
 class QuarantineRecord:
     result: ScanResult
     action: ReviewAction | None = None   # user choice, once made
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "result": self.result.to_dict(),
+            "action": self.action.value if self.action is not None else None,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "QuarantineRecord":
+        action_raw = d.get("action")
+        return cls(
+            result=ScanResult.from_dict(d["result"]),
+            action=ReviewAction(action_raw) if action_raw is not None else None,
+        )
 
 
 @dataclass

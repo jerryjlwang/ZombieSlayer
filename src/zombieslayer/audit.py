@@ -91,6 +91,54 @@ class AuditLog:
             "matched_sources": list(matched_sources),
         })
 
+    def record_retro_scan_startup(self, scanned: int, newly_quarantined: int) -> None:
+        """Record an automatic retro-scan run at plugin boot (issue #6 §9)."""
+        self._emit({
+            "event": "retro_scan_startup",
+            "scanned": scanned,
+            "newly_quarantined": newly_quarantined,
+        })
+
+    def record_memory_poisoning(
+        self, target: str, source_id: str, ratio: float
+    ) -> None:
+        """Record a write blocked because it quotes quarantined content (issue #6 §9)."""
+        self._emit({
+            "event": "memory_poisoning",
+            "target": target,
+            "source_id": source_id,
+            "match_ratio": ratio,
+        })
+
+    def record_persistence_write(
+        self, target: str, artifact_id: str, text_hash: str
+    ) -> None:
+        """Record a successful persistence write (issue #6 §9 — rollback timeline)."""
+        self._emit({
+            "event": "persistence_write",
+            "target": target,
+            "artifact_id": artifact_id,
+            "text_hash": text_hash,
+        })
+
+    def record_rollback_proposed(
+        self, reason: str, since: float, artifact_ids: list[str]
+    ) -> None:
+        """Record an operator-initiated rollback proposal (issue #6 §9)."""
+        self._emit({
+            "event": "rollback_proposed",
+            "reason": reason,
+            "since": since,
+            "artifact_ids": list(artifact_ids),
+        })
+
+    def record_rollback_executed(self, artifact_ids: list[str]) -> None:
+        """Record host confirmation that a rollback was applied (issue #6 §9)."""
+        self._emit({
+            "event": "rollback_executed",
+            "artifact_ids": list(artifact_ids),
+        })
+
     # ---- output --------------------------------------------------------
     def _emit(self, payload: dict[str, Any]) -> None:
         payload = {"ts": time.time(), **payload}
