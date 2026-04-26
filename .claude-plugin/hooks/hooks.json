@@ -9,6 +9,25 @@
             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scan_tool_output.py"
           }
         ]
+      },
+      {
+        "matcher": "Read|.*screenshot.*|.*image.*|mcp__Claude_Preview__.*|mcp__Claude_in_Chrome__.*|mcp__computer-use__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scan_image.py"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scan_image.py"
+          }
+        ]
       }
     ]
   }

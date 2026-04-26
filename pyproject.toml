@@ -15,10 +15,22 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 intent = ["anthropic>=0.40"]
+vision = [
+    "Pillow>=10",
+    "piexif>=1.1",
+    "pyzbar>=0.1.9",
+    "pytesseract>=0.3.10",
+    "anthropic>=0.40",
+    "python-magic>=0.4",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["zombieslayer*", "zombieslayer_integrations*"]
+include = ["zombieslayer*", "zombieslayer_integrations*", "zombieslayer_vision*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "requires_tesseract: test exercises the Tesseract OCR baseline (skipped if Tesseract is unavailable)",
+    "live: test hits the real Claude vision API (opt-in; not in default CI)",
+]
