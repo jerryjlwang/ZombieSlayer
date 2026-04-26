@@ -137,3 +137,43 @@ The hook will now run only in this project.
 - Plugin-style callback hooks: `on_quarantine`, `on_blocked_write`,
   `on_review`.
 - Zero runtime dependencies.
+
+## Vision layer (optional)
+
+Image-borne prompt injections (legible text rendered into a JPEG, hidden
+white-on-white text, EXIF/XMP metadata payloads, QR-encoded instructions,
+LSB steganography, polyglot files, adversarial perturbations) bypass the
+text engine entirely. The optional `zombieslayer_vision` sibling package
+adds an image-scanning layer that:
+
+- detects polyglot files and trims trailing-byte payloads,
+- extracts EXIF / XMP / PNG-text fields and re-runs the core detector on
+  them via a synthesized `ContentItem`,
+- statistically flags LSB steganography and JPEG DCT-domain hiding,
+- finds low-contrast and alpha-only hidden text,
+- decodes QR codes and barcodes (when libzbar is available),
+- runs Tesseract + Claude vision in `STRICT` mode and flags large
+  divergence between the two,
+- always returns sanitized bytes (metadata stripped, LSBs zeroed,
+  recompressed, trailing bytes truncated) for `REPROCESS_CLEAN`.
+
+```bash
+pip install -e ".[vision]"   # also requires Tesseract + libzbar binaries
+```
+
+```python
+from zombieslayer_vision import VisionScanner, make_image_item
+from zombieslayer.types import SourceTrust
+
+scanner = VisionScanner()
+result = scanner.scan(make_image_item(image_bytes, "fetch://x", SourceTrust.UNTRUSTED))
+if result.quarantined:
+    print(result.score, [f.rule for f in result.findings])
+clean_bytes = result.sanitized_bytes  # always populated
+```
+
+The Claude Code plugin's hooks include `Read`, MCP screenshot tools, and
+`UserPromptSubmit` so any image entering a session is scanned before its
+contents shape the model's reasoning. Set
+`ZOMBIESLAYER_AUTO_SUBSTITUTE_SANITIZED=1` to pass sanitized bytes
+through instead of denying.
