@@ -117,7 +117,13 @@ class ZombieSlayer:
     def execute_approved_actions(
         self, executor: Callable[[DeferredAction], Any]
     ) -> list[tuple[DeferredAction, Any]]:
-        """Run deferred actions whose source items were approved in review."""
+        """Run deferred actions whose source items were approved in review.
+
+        If `executor` raises, the action is left as not-executed and the
+        exception propagates so the caller can decide whether to retry.
+        Note: an executor with partial side effects may run twice on retry —
+        executors should be idempotent.
+        """
         ran: list[tuple[DeferredAction, Any]] = []
         for action in self._deferred:
             if action.executed:
@@ -127,6 +133,17 @@ class ZombieSlayer:
                 action.executed = True
                 ran.append((action, result))
         return ran
+
+    # ---- session boundary ---------------------------------------------
+    def reset(self) -> None:
+        """Clear quarantine state and pending deferred actions.
+
+        Call between independent tasks when reusing a single ZombieSlayer
+        instance, otherwise quarantined items from earlier tasks accumulate
+        in later end-of-task reviews.
+        """
+        self.store.clear()
+        self._deferred.clear()
 
     def _source_approved(self, item_id: str) -> bool:
         rec = self.store.get(item_id)

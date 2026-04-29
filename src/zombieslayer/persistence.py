@@ -43,15 +43,22 @@ class PersistenceGuard:
         `derived_from` are ContentItem.ids the write was derived from; if any
         are already quarantined, the write is blocked regardless of its text.
         """
+        tainted_ids: list[str] = []
+        tainted_findings: list = []
         for item_id in derived_from:
             rec = self.store.get(item_id)
             if rec is not None:
-                return PersistenceDecision(
-                    allowed=False,
-                    target=target,
-                    reason=f"derived from quarantined source {item_id}",
-                    findings=rec.result.findings,
-                )
+                tainted_ids.append(item_id)
+                tainted_findings.extend(rec.result.findings)
+        if tainted_ids:
+            ids_str = ", ".join(tainted_ids)
+            return PersistenceDecision(
+                allowed=False,
+                target=target,
+                reason=f"derived from quarantined source(s) {ids_str}",
+                findings=tainted_findings,
+                blocked_source_ids=tuple(tainted_ids),
+            )
 
         # Treat the write itself as untrusted content: suspicious instruction
         # text in a memory write is exactly the persistence-attack signature.
@@ -76,7 +83,11 @@ class PersistenceGuard:
         results: list[ScanResult] = []
         for item in artifacts:
             findings = self.detector.scan(item)
-            quarantine, score = self.policy.should_quarantine(item.trust, findings)
+            # Use the *minimum* trust along the derivation chain so that an
+            # artifact tagged USER but derived from UNTRUSTED content gets the
+            # stricter UNTRUSTED threshold.
+            effective_trust = self._effective_trust(item)
+            quarantine, score = self.policy.should_quarantine(effective_trust, findings)
             result = ScanResult(
                 item=item, findings=findings, score=score, quarantined=quarantine
             )
@@ -84,3 +95,23 @@ class PersistenceGuard:
                 self.store.add(result)
             results.append(result)
         return results
+
+    _TRUST_RANK = {
+        SourceTrust.UNTRUSTED: 0,
+        SourceTrust.RETRIEVAL: 1,
+        SourceTrust.DEVELOPER: 2,
+        SourceTrust.USER: 3,
+    }
+
+    def _effective_trust(self, item: ContentItem) -> SourceTrust:
+        min_trust = item.trust
+        min_rank = self._TRUST_RANK[item.trust]
+        for src_id in item.derived_from:
+            rec = self.store.get(src_id)
+            if rec is None:
+                continue
+            src_rank = self._TRUST_RANK[rec.result.item.trust]
+            if src_rank < min_rank:
+                min_rank = src_rank
+                min_trust = rec.result.item.trust
+        return min_trust

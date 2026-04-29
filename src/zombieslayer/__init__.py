@@ -14,7 +14,7 @@ from zombieslayer.types import (
     PersistenceDecision,
 )
 from zombieslayer.detector import Detector
-from zombieslayer.quarantine import QuarantineStore
+from zombieslayer.quarantine import QuarantineStore, QuarantineStoreProtocol
 from zombieslayer.policy import Policy
 from zombieslayer.scanner import IntakeScanner
 from zombieslayer.persistence import PersistenceGuard
@@ -35,6 +35,7 @@ __all__ = [
     "PersistenceDecision",
     "Detector",
     "QuarantineStore",
+    "QuarantineStoreProtocol",
     "Policy",
     "IntakeScanner",
     "PersistenceGuard",

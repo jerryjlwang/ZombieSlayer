@@ -1,11 +1,26 @@
 from __future__ import annotations
 
+from typing import Protocol, runtime_checkable
+
 from zombieslayer.types import (
     QuarantineRecord,
     ReviewAction,
     ReviewSummary,
     ScanResult,
 )
+
+
+@runtime_checkable
+class QuarantineStoreProtocol(Protocol):
+    """Interface a custom (e.g., persistent) quarantine store must implement."""
+
+    def add(self, result: ScanResult) -> QuarantineRecord: ...
+    def get(self, item_id: str) -> QuarantineRecord | None: ...
+    def all(self) -> list[QuarantineRecord]: ...
+    def pending(self) -> list[QuarantineRecord]: ...
+    def set_action(self, item_id: str, action: ReviewAction) -> QuarantineRecord: ...
+    def summary(self) -> ReviewSummary: ...
+    def clear(self) -> None: ...
 
 
 class QuarantineStore:
@@ -33,7 +48,9 @@ class QuarantineStore:
         return [r for r in self._records.values() if r.action is None]
 
     def set_action(self, item_id: str, action: ReviewAction) -> QuarantineRecord:
-        rec = self._records[item_id]
+        rec = self._records.get(item_id)
+        if rec is None:
+            raise KeyError(f"unknown quarantine item id: {item_id}")
         rec.action = action
         return rec
 

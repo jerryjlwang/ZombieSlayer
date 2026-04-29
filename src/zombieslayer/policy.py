@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 
 from zombieslayer.types import Finding, ScanMode, SourceTrust
@@ -35,7 +36,17 @@ class Policy:
         return 1.0 - prod
 
     def threshold(self, trust: SourceTrust) -> float:
-        return self.thresholds.get((trust, self.mode), 0.5)
+        key = (trust, self.mode)
+        if key not in self.thresholds:
+            warnings.warn(
+                f"no threshold configured for ({trust.value}, {self.mode.value}); "
+                "falling back to 0.5. Update Policy.thresholds when adding a new "
+                "SourceTrust or ScanMode.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return 0.5
+        return self.thresholds[key]
 
     def should_quarantine(self, trust: SourceTrust, findings: list[Finding]) -> tuple[bool, float]:
         score = self.aggregate(findings)

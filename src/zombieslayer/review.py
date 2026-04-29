@@ -70,10 +70,11 @@ class ReviewFlow:
         rec.result.sanitized_text = out
         rec.action = ReviewAction.REPROCESS_CLEAN
         if residual:
-            # Surface residual findings so the developer/user sees that the
-            # clean was partial.
+            redacted_rules: set[str] = set()
+            for _, label in merged:
+                redacted_rules.update(label.split("+"))
             rec.result.findings = rec.result.findings + [
-                f for f in residual if f.rule not in {m[1] for m in merged}
+                f for f in residual if f.rule not in redacted_rules
             ]
         return rec
 

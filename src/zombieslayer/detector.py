@@ -27,9 +27,15 @@ _RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "override_disregard",
-        re.compile(r"\bdisregard (?:the |all |any )?(?:system|developer|previous|prior) (?:prompt|instructions?)\b", re.I),
+        re.compile(r"\b(?:disregard|forget|discard|drop) (?:the |all |any |your )?(?:system|developer|previous|prior|above|earlier) (?:prompt|instructions?|rules|directions?)\b", re.I),
         RiskCategory.INSTRUCTION_OVERRIDE, 0.9,
-        "asks the model to disregard system/developer prompt",
+        "asks the model to disregard/forget system/developer prompt",
+    ),
+    Rule(
+        "override_forget_general",
+        re.compile(r"\bforget (?:everything|what) (?:you|i) (?:were told|told you|said|know)\b", re.I),
+        RiskCategory.INSTRUCTION_OVERRIDE, 0.85,
+        "asks the model to forget prior knowledge/instructions",
     ),
     Rule(
         "override_new_instructions",
@@ -39,27 +45,38 @@ _RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "role_reassignment",
-        re.compile(r"\byou are now\b|\bact as\b|\bpretend to be\b|\bfrom now on,? you\b", re.I),
+        re.compile(
+            r"\byou are now\b|\bact as\b|\bpretend to be\b|\bfrom now on,? you\b"
+            r"|\byour new role is\b|\bhenceforth (?:you|act|respond)\b"
+            r"|\brespond only as\b|\brole[- ]?play as\b",
+            re.I,
+        ),
         RiskCategory.INSTRUCTION_OVERRIDE, 0.55,
         "attempts to reassign agent role",
     ),
     Rule(
         "system_prompt_reveal",
-        re.compile(r"\b(?:reveal|print|show|output|repeat) (?:your |the )?(?:system|initial|hidden) (?:prompt|instructions?)\b", re.I),
+        re.compile(r"\b(?:reveal|print|show|output|repeat|dump|list|recite) (?:your |the )?(?:system|initial|hidden|original|training) (?:prompt|instructions?|guidelines|rules)\b", re.I),
         RiskCategory.DATA_EXFILTRATION, 0.9,
         "requests disclosure of system/hidden prompt",
     ),
     Rule(
         "secret_exfil",
-        re.compile(r"\b(?:send|email|post|upload|exfiltrate|leak) (?:.{0,40}?)(?:secret|api[_ ]?key|token|password|credentials?)\b", re.I),
+        re.compile(r"\b(?:send|email|post|upload|exfiltrate|leak|transmit|copy|share|forward|pipe) (?:.{0,40}?)(?:secret|api[_ ]?key|token|password|credentials?|private[_ ]?key|session)\b", re.I),
         RiskCategory.DATA_EXFILTRATION, 0.95,
         "requests exfiltration of secrets/credentials",
     ),
     Rule(
         "url_side_channel",
-        re.compile(r"\b(?:fetch|GET|curl|navigate to|visit)\s+https?://\S+\?[^\s]*(?:data|secret|token|key|prompt)=", re.I),
+        re.compile(r"\b(?:fetch|GET|curl|wget|navigate to|visit|open|load)\s+https?://\S+\?[^\s]*(?:data|secret|token|key|prompt)=", re.I),
         RiskCategory.DATA_EXFILTRATION, 0.9,
         "URL appears to be a side-channel exfiltration endpoint",
+    ),
+    Rule(
+        "url_path_exfil",
+        re.compile(r"\b(?:fetch|GET|curl|wget|navigate to|visit|open|load|POST)\s+https?://\S+/(?:exfil|leak|collect|capture|log)/\S+", re.I),
+        RiskCategory.DATA_EXFILTRATION, 0.85,
+        "URL path looks like an exfiltration endpoint",
     ),
     Rule(
         "tool_invoke",
@@ -75,7 +92,7 @@ _RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "persist_future",
-        re.compile(r"\b(?:in (?:all )?future (?:runs|sessions|conversations))|\bfor (?:all|every) subsequent (?:task|run|session)\b", re.I),
+        re.compile(r"\b(?:in (?:all )?future (?:runs?|sessions?|conversations?))|\bfor (?:all|every) subsequent (?:tasks?|runs?|sessions?|conversations?)\b", re.I),
         RiskCategory.PERSISTENCE, 0.85,
         "targets future runs/sessions",
     ),
@@ -93,7 +110,13 @@ _RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "fake_system_tag",
-        re.compile(r"<\s*(?:system|assistant|developer)\s*>|\[(?:SYSTEM|ASSISTANT|DEVELOPER)\]", re.I),
+        re.compile(
+            r"<\s*(?:system|assistant|developer)\s*>"
+            r"|\[(?:SYSTEM|ASSISTANT|DEVELOPER)\]"
+            r"|<\|\s*(?:system|assistant|developer|im_start|im_end)\s*\|>"
+            r"|<<\s*(?:SYS|SYSTEM|INST)\s*>>",
+            re.I,
+        ),
         RiskCategory.INSTRUCTION_OVERRIDE, 0.75,
         "fake role/system tag in external content",
     ),
@@ -111,7 +134,7 @@ _RULES: tuple[Rule, ...] = (
 
 
 # Characters used to smuggle instructions through invisibly.
-_ZERO_WIDTH = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
+_ZERO_WIDTH = re.compile(r"[\u00ad\u034f\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]")
 
 
 # Sentence-level register signals. Used by `_denoising` to score each sentence
@@ -189,7 +212,9 @@ class Detector:
         ))
         words = max(len(text.split()), 1)
         density = len(imp_hits) / words
-        if len(imp_hits) >= 3 and density > 0.08:
+        # Allow short payloads (>=2 imperatives at high density) to fire too —
+        # a 2-line attack in a tiny chunk should not be lost behind the count gate.
+        if (len(imp_hits) >= 3 and density > 0.08) or (len(imp_hits) >= 2 and density > 0.18):
             out.append(Finding(
                 category=RiskCategory.STRUCTURAL_ANOMALY,
                 reason=f"high imperative-instruction density ({len(imp_hits)} hits, {density:.0%})",

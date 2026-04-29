@@ -47,6 +47,11 @@ class ContentItem:
     chunk_ref: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    # Provenance: ContentItem.ids this artifact was derived from. Used by
+    # `PersistenceGuard.retro_scan` to apply the *minimum* trust along the
+    # derivation chain rather than the artifact's own (possibly inflated)
+    # trust label.
+    derived_from: tuple[str, ...] = ()
 
 
 @dataclass
@@ -128,6 +133,8 @@ class ReviewSummary:
             if rec.result.findings:
                 top = max(rec.result.findings, key=lambda f: f.score)
                 lines.append(f"    {top.rule}: {top.reason}")
+            else:
+                lines.append("    (no individual findings; quarantined by aggregate signal)")
 
             cats_str = ", ".join(c.value.upper() for c in rec.result.categories)
             if cats_str:
@@ -149,3 +156,4 @@ class PersistenceDecision:
     target: PersistenceTarget
     reason: str
     findings: list[Finding] = field(default_factory=list)
+    blocked_source_ids: tuple[str, ...] = ()
